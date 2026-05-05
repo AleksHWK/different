@@ -1,0 +1,250 @@
+# Импорт необходимых библиотек
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from scipy.integrate import solve_ivp
+from matplotlib.patches import Polygon
+
+# Параметры механической системы (из условия задачи)
+m1 = 1.0      # масса диска, кг
+m2 = 0.2      # масса подвешенного груза, кг
+r = 0.2       # радиус диска, м
+l = 0.2       # длина стержня AB, м
+c = 1.95      # жесткость крутильной пружины, Н*м/рад (момент = -c*phi)
+g = 9.81      # ускорение свободного падения, м/с²
+
+# Смещение оси вращения O относительно центра диска C: e = r / √3
+e = r / np.sqrt(3)
+
+# Постоянный угол π/6 (30°) между AC и CO
+alpha_const = np.pi / 6
+
+# Начальные условия
+phi0 = np.pi / 12
+theta0 = 0.0
+phi_dot0 = np.pi / 36
+theta_dot0 = 0.0
+y0 = [phi0, phi_dot0, theta0, theta_dot0]
+
+# Правая часть системы дифференциальных уравнений
+#   Возвращает: φ̇, φ̈, θ̇, θ̈
+def rhs(t, y):
+    phi, phi_dot, theta, theta_dot = y
+    alpha = phi - theta - alpha_const
+
+    A = ((5.0/6.0)*m1 + (4.0/3.0)*m2) * r**2
+    B = 2.0 * m2 * l * e * np.sin(alpha)
+    Cc = 2.0 * e * np.sin(alpha)
+    D = l
+
+    F1 = ((m1 * np.sin(phi) +
+           2.0 * m2 * np.cos(phi - alpha_const)) * e * g
+          - c * phi
+          + 2.0 * m2 * l * e * theta_dot**2 * np.cos(alpha))
+
+    F2 = (-g * np.sin(theta)
+          - 2.0 * e * phi_dot**2 * np.cos(alpha))
+
+    det = A * D - B * Cc
+    phi_ddot = (F1 * D - B * F2) / det
+    theta_ddot = (A * F2 - F1 * Cc) / det
+
+    return [phi_dot, phi_ddot, theta_dot, theta_ddot]
+
+# Численное интегрирование системы
+t0, t1 = 0.0, 10.0
+t_eval = np.linspace(t0, t1, 2000)
+
+sol = solve_ivp(rhs, (t0, t1), y0, t_eval=t_eval,
+                rtol=1e-8, atol=1e-8)
+
+phi = sol.y[0]
+phi_dot = sol.y[1]
+theta = sol.y[2]
+theta_dot = sol.y[3]
+t = sol.t
+
+# Реакция в шарнире A: R_A(t)
+def reaction_A(phi_arr, phi_dot_arr, theta_arr, theta_dot_arr):
+    RA = np.zeros_like(phi_arr)
+
+    for i in range(len(phi_arr)):
+        ph = phi_arr[i]
+        phdot = phi_dot_arr[i]
+        th = theta_arr[i]
+        thdot = theta_dot_arr[i]
+
+        alpha = ph - th - alpha_const
+
+        A = ((5.0/6.0)*m1 + (4.0/3.0)*m2) * r**2
+        B = 2.0 * m2 * l * e * np.sin(alpha)
+        Cc = 2.0 * e * np.sin(alpha)
+        D = l
+
+        F1 = ((m1 * np.sin(ph) +
+               2.0 * m2 * np.cos(ph - alpha_const)) * e * g
+              - c * ph
+              + 2.0 * m2 * l * e * thdot**2 * np.cos(alpha))
+
+        F2 = (-g * np.sin(th)
+              - 2.0 * e * phdot**2 * np.cos(alpha))
+
+        det = A * D - B * Cc
+
+        phi_ddot = (F1 * D - B * F2) / det
+        theta_ddot = (A * F2 - F1 * Cc) / det
+
+        RA[i] = (m2 * (g * np.cos(th) + l * theta_ddot)
+                 - 2.0 * m2 * e *
+                   (phi_ddot * np.cos(alpha) - phdot**2 * np.sin(alpha)))
+
+    return RA
+
+RA = reaction_A(phi, phi_dot, theta, theta_dot)
+
+# Построение графиков φ(t), θ(t), R_A(t)
+fig1, ax1 = plt.subplots(3, 1, figsize=(7, 8), sharex=True)
+
+ax1[0].plot(t, phi)
+ax1[0].set_ylabel(r'$\varphi(t)$')
+
+ax1[1].plot(t, theta)
+ax1[1].set_ylabel(r'$\theta(t)$')
+
+ax1[2].plot(t, RA)
+ax1[2].set_ylabel(r'$R_A(t)$')
+ax1[2].set_xlabel('t, c')
+
+fig1.tight_layout()
+# Координаты точек C, A, B для анимации
+def compute_positions(phi_val, theta_val):
+    xC = -e * np.sin(phi_val)
+    yC =  e * np.cos(phi_val)
+
+    xA = xC - r * np.cos(phi_val)
+    yA = yC - r * np.sin(phi_val)
+
+    xB = xA + l * np.sin(theta_val)
+    yB = yA - l * np.cos(theta_val)
+
+    return xC, yC, xA, yA, xB, yB
+
+# Пружина
+def torsion_spring_hook_OC(xC, yC,
+                           R0=0.010,
+                           R1=0.030,
+                           turns=1.0,
+                           n=220,
+                           end_gap=0.35):
+    # направление ребра OC
+    dir_oc = np.arctan2(yC, xC)
+
+    # задаём КОНЕЧНЫЙ угол спирали
+    ang_end = dir_oc - end_gap
+    ang_start = ang_end - 2*np.pi*turns
+
+    ang = np.linspace(ang_start, ang_end, n)
+    rad = np.linspace(R0, R1, n)
+
+    xs = rad * np.cos(ang)
+    ys = rad * np.sin(ang)
+
+    xO = np.array([xs[0], 0.0])
+    yO = np.array([ys[0], 0.0])
+
+    x_hook = R1 * np.cos(dir_oc)
+    y_hook = R1 * np.sin(dir_oc)
+
+    xOC = np.array([xs[-1], x_hook])
+    yOC = np.array([ys[-1], y_hook])
+
+    return xs, ys, xO, yO, xOC, yOC
+
+# Настройка окна анимации
+fig2, ax2 = plt.subplots(figsize=(6, 6))
+ax2.set_aspect('equal')
+
+ax2.set_xlim(-0.6, 0.45)
+ax2.set_ylim(-0.55, 0.85)
+
+# Шарнир O
+hinge_w = 0.06
+hinge_h = 0.05
+hinge = Polygon([[-hinge_w/2, -hinge_h],
+                 [ hinge_w/2, -hinge_h],
+                 [ 0.0,        0.0]],
+                closed=True, fill=False, edgecolor='k', linewidth=1.5)
+ax2.add_patch(hinge)
+
+ax2.plot(0, 0, 'ko', ms=5)  # точка O
+
+# Объекты анимации
+disk_line, = ax2.plot([], [], 'k-')
+oc_line,   = ax2.plot([], [], 'k-', lw=1)
+ca_line,   = ax2.plot([], [], 'k-', lw=1.5)
+rod_line,  = ax2.plot([], [], 'b-', lw=2)
+mass_point, = ax2.plot([], [], 'ko', ms=8)
+
+spring_spiral, = ax2.plot([], [], 'k-', lw=1.4)
+spring_to_O,   = ax2.plot([], [], 'k-', lw=1.4)
+spring_to_OC,  = ax2.plot([], [], 'k-', lw=1.4)
+
+time_text = ax2.text(0.02, 0.95, '', transform=ax2.transAxes)
+
+# Инициализация анимации
+def init():
+    disk_line.set_data([], [])
+    oc_line.set_data([], [])
+    ca_line.set_data([], [])
+    rod_line.set_data([], [])
+    mass_point.set_data([], [])
+    spring_spiral.set_data([], [])
+    spring_to_O.set_data([], [])
+    spring_to_OC.set_data([], [])
+    time_text.set_text('')
+    return (disk_line, oc_line, ca_line, rod_line, mass_point,
+            spring_spiral, spring_to_O, spring_to_OC, time_text)
+
+# Обновление кадра анимации
+def update(frame):
+    ph = phi[frame]
+    th = theta[frame]
+
+    xC, yC, xA, yA, xB, yB = compute_positions(ph, th)
+
+    # Диск
+    circle_angle = np.linspace(0, 2*np.pi, 240)
+    x_circle = xC + r*np.cos(circle_angle)
+    y_circle = yC + r*np.sin(circle_angle)
+    disk_line.set_data(x_circle, y_circle)
+
+    # OC и CA
+    oc_line.set_data([0.0, xC], [0.0, yC])
+    ca_line.set_data([xC, xA], [yC, yA])
+
+    # AB и груз
+    rod_line.set_data([xA, xB], [yA, yB])
+    mass_point.set_data([xB], [yB])
+    # Пружина
+    xs, ys, xO, yO, xOC, yOC = torsion_spring_hook_OC(xC, yC)
+    spring_spiral.set_data(xs, ys)
+    spring_to_O.set_data(xO, yO)
+    spring_to_OC.set_data(xOC, yOC)
+
+    time_text.set_text(f't = {t[frame]:.2f} c')
+
+    return (disk_line, oc_line, ca_line, rod_line, mass_point,
+            spring_spiral, spring_to_O, spring_to_OC, time_text)
+
+
+# Создание анимации
+anim = FuncAnimation(
+    fig2,
+    update,
+    frames=len(t),
+    init_func=init,
+    interval=1000 * (t1 - t0) / len(t),
+    blit=True
+)
+
+plt.show()
