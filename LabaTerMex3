@@ -1,0 +1,80 @@
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+import sympy as sp
+import numpy as np
+
+def Rot2D(X, Y, phi):
+    X_new = X * np.cos(phi) - Y * np.sin(phi)
+    Y_new = X * np.sin(phi) + Y * np.cos(phi)
+    return X_new, Y_new
+# Определение символов и функций
+t = sp.Symbol('t')
+r = 1 + sp.sin(5 * t)
+psi = t
+x = r * sp.cos(psi)
+y = r * sp.sin(psi)
+# Вычисление скорости
+Vx = sp.diff(x, t)
+Vy = sp.diff(y, t)
+# Вычисление ускорения
+Ax = sp.diff(Vx, t)
+Ay = sp.diff(Vy, t)
+
+# Преобразование символьных выражений в функции для численного вычисления
+F_x = sp.lambdify(t, x, 'numpy')
+F_y = sp.lambdify(t, y, 'numpy')
+F_Vx = sp.lambdify(t, Vx, 'numpy')
+F_Vy = sp.lambdify(t, Vy, 'numpy')
+F_Ax = sp.lambdify(t, Ax, 'numpy')
+F_Ay = sp.lambdify(t, Ay, 'numpy')
+# Генерация временной сетки
+t_vals = np.linspace(0, 10, 1001)
+x_vals = F_x(t_vals)
+y_vals = F_y(t_vals)
+Vx_vals = F_Vx(t_vals)
+Vy_vals = F_Vy(t_vals)
+Ax_vals = F_Ax(t_vals)
+Ay_vals = F_Ay(t_vals)
+# Углы поворота векторов скорости и ускорения
+phi_v = np.arctan2(Vy_vals, Vx_vals)
+phi_a = np.arctan2(Ay_vals, Ax_vals)
+# Создание графика
+fig = plt.figure()
+ax = fig.add_subplot(1, 1, 1)
+ax.axis('equal')
+ax.set(xlim=[-4, 4], ylim=[-4, 4])
+# Построение траектории движения
+ax.plot(x_vals, y_vals)
+# Шаблон точек для отрисовки наконечников векторов (уголков)
+X_arr = np.array([-0.15, 0, -0.15])
+Y_arr = np.array([0.05, 0, -0.05])
+# Коэффициент масштабирования для векторов
+k_V = 0.5
+k_A = 0.5
+# Вектор скорости
+RX_v, RY_v = Rot2D(X_arr, Y_arr, phi_v[0])
+V_Line = ax.plot([x_vals[0], x_vals[0] + k_V * Vx_vals[0]], [y_vals[0], y_vals[0] + k_V * Vy_vals[0]], color=[0, 1, 0])[0]
+V_Arr = ax.plot(x_vals[0] + k_V * Vx_vals[0] + RX_v, y_vals[0] + k_V * Vy_vals[0] + RY_v, color=[0, 1, 0])[0]
+# Вектор ускорения
+RX_a, RY_a = Rot2D(X_arr, Y_arr, phi_a[0])
+A_Line = ax.plot([x_vals[0], x_vals[0] + k_A * Ax_vals[0]], [y_vals[0], y_vals[0] + k_A * Ay_vals[0]], color=[1, 0, 1])[0]
+A_Arr = ax.plot(x_vals[0] + k_A * Ax_vals[0] + RX_a, y_vals[0] + k_A * Ay_vals[0] + RY_a, color=[1, 0, 1])[0]
+# Точка на траектории
+P = ax.plot(x_vals[0], y_vals[0], 'o', color=[1, 0, 0])[0]
+# Функция обновления кадров
+def update(i):
+    # Обновление точки
+    P.set_data([x_vals[i]], [y_vals[i]])
+ # Обновление вектора скорости
+    V_Line.set_data([x_vals[i], x_vals[i] + k_V * Vx_vals[i]], [y_vals[i], y_vals[i] + k_V * Vy_vals[i]])
+    RX_v, RY_v = Rot2D(X_arr, Y_arr, phi_v[i])
+    V_Arr.set_data(x_vals[i] + k_V * Vx_vals[i] + RX_v, y_vals[i] + k_V * Vy_vals[i] + RY_v)
+ # Обновление вектора ускорения
+    A_Line.set_data([x_vals[i], x_vals[i] + k_A * Ax_vals[i]], [y_vals[i], y_vals[i] + k_A * Ay_vals[i]])
+    RX_a, RY_a = Rot2D(X_arr, Y_arr, phi_a[i])
+    A_Arr.set_data(x_vals[i] + k_A * Ax_vals[i] + RX_a, y_vals[i] + k_A * Ay_vals[i] + RY_a)
+
+    return [P, V_Line, V_Arr, A_Line, A_Arr]
+# Создание анимации
+animate = FuncAnimation(fig, update, interval=(t_vals[1] - t_vals[0]) * 1000, frames=len(t_vals))
+plt.show()
