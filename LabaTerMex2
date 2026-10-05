@@ -1,0 +1,81 @@
+import numpy as np
+import sympy as sp
+import matplotlib.pyplot as plt
+
+# Исходные данные
+QS = 4 * 10**3
+GS_val = 2 * 10**3
+aS = 20 * 10**(-2)
+bS = 10 * 10**(-2)
+cS = 30 * 10**(-2)
+RS = 10 * 10**(-2)
+rS = 10 * 10**(-2)
+
+# Силы
+FQ = np.array([np.cos(np.pi/3), 0, np.sin(np.pi/3)]) * QS
+FG = np.array([0, 0, -1]) * GS_val
+
+# Переменные
+RAx, RAz, RBx, RBz, P = sp.symbols('RAx RAz RBx RBz P')
+
+# Силы через переменные
+FP1 = sp.Matrix([-1, 0, 0]) * P
+FP2 = sp.Matrix([1, 0, 0]) * P
+RA = sp.Matrix([RAx, 0, RAz])
+RB = sp.Matrix([RBx, 0, RBz])
+VA = sp.Matrix([0, 0, 0])
+
+# Положения точек
+VQ = VA + sp.Matrix([0, aS, 0]) + sp.Matrix([-RS, 0, 0]) + sp.Matrix([0, bS, 0])
+VG = VA + sp.Matrix([0, aS + 3 * bS, 0])
+VB = VG + sp.Matrix([0, aS, 0])
+VL = VB + sp.Matrix([0, cS, 0])
+VC = VL + sp.Matrix([0, -np.cos(np.pi/3), np.sin(np.pi/3)]) * rS
+VD = VL + sp.Matrix([0, np.cos(np.pi/3), -np.sin(np.pi/3)]) * rS
+
+# Диапазон массы
+mG = np.arange(0, 6.5, 0.5)
+
+# Массивы для результатов
+mRAx, mRAz, mRBx, mRBz, mP = [], [], [], [], []
+
+for mg in mG:
+    G = sp.Matrix([0, 0, -mg * 10**3])
+    # Уравнения равновесия сил и моментов
+    eqnP = RA + RB + sp.Matrix(FQ) + G + FP1 + FP2
+    eqnM = (RA.cross(VA) + RB.cross(VB) + 
+            sp.Matrix(FQ).cross(VQ) + G.cross(VG) +
+            FP1.cross(VC) + FP2.cross(VD))
+    
+    # Решение системы уравнений
+    sol = sp.solve([sp.Eq(eqnP[0], 0), sp.Eq(eqnP[1], 0), sp.Eq(eqnP[2], 0),
+                    sp.Eq(eqnM[0], 0), sp.Eq(eqnM[1], 0), sp.Eq(eqnM[2], 0)],
+                   (RAx, RAz, RBx, RBz, P), dict=True)
+    
+    if sol:
+        sol = sol[0]
+        mRAx.append(float(sol[RAx].evalf()))
+        mRAz.append(float(sol[RAz].evalf()))
+        mRBx.append(float(sol[RBx].evalf()))
+        mRBz.append(float(sol[RBz].evalf()))
+        mP.append(float(sol[P].evalf()))
+    else:
+        mRAx.append(np.nan)
+        mRAz.append(np.nan)
+        mRBx.append(np.nan)
+        mRBz.append(np.nan)
+        mP.append(np.nan)
+
+# Построение графика
+plt.figure()
+plt.plot(mG, mRAx, '--r', linewidth=2, label='RAx')
+plt.plot(mG, mRAz, '--b', linewidth=2, label='RAz')
+plt.plot(mG, mRBx, ':g', linewidth=1, label='RBx')
+plt.plot(mG, mRBz, ':m', linewidth=1, label='RBz')
+plt.plot(mG, mP, '-ok', label='P')
+
+plt.xlabel('G')
+plt.ylabel('mRAx, mRAz, mRBx, mRBz, mP')
+plt.legend()
+plt.grid(True)
+plt.show()
