@@ -1,0 +1,186 @@
+#include <iostream>
+#include <ctime>
+#include <fstream>
+#include <math.h>
+
+using namespace std;
+
+// Константы
+const int K = 4;         // Количество летательных аппаратов
+const float dt = 0.1;    // Шаг по времени
+
+// Базовый класс для всех объектов
+class TAObject
+{
+public:
+    float x, y;           // Координаты
+    bool f;               // Флаг занятости
+    TAObject() : x(0), y(0), f(false) {}
+    TAObject(float x, float y) : x(x), y(y), f(false) {}
+    virtual ~TAObject() {}
+};
+
+// Класс летательных аппаратов
+class TLA : public TAObject {
+public:
+    float xc, yc, R, fi, V;  // Параметры движения
+    int type_of;             // Тип ЛА ('a' - самолет, 'h' - вертолет)
+    bool landing;             // Флаг завершения посадки
+
+    TLA(float x, float y, float V, float xc, float yc) :
+        TAObject(x, y), V(V), xc(xc), yc(yc), landing(false)
+    {
+        this->f = true;
+
+        // Расчет угла курса
+        int b = 0;
+        if (this->x > this->xc) b = 0;
+        if (this->x < this->xc && this->y < this->yc) b = -1;
+        if (this->x < this->xc && this->y > this->yc) b = 1;
+
+        this->fi = b * 3.14f + atan((y - yc) / (x - xc));
+        this->R = sqrt(pow((this->x - this->xc), 2) + pow((this->y - this->yc), 2));
+    }
+
+    virtual void move(float t, int a) {
+        if (a == 0) this->f = false;
+        else this->f = true;
+    }
+};
+
+// Класс самолета
+class TAircraft : public TLA {
+public:
+    TAircraft(float x, float y, float V, float xc, float yc, char type) :
+        TLA(x, y, V, xc, yc)
+    {
+        this->type_of = 1;
+    }
+
+    void move(float t, int a) override {
+        if (a == 0) this->f = false;
+        else this->f = true;
+
+        float om = -(V / R);
+        x = -(xc + R * cos(fi + om * t)) * (a - 1) + a * (x + V * dt);
+        y = -(yc + R * sin(fi + om * t)) * (a - 1) + y * a;
+    }
+};
+
+// Класс вертолета
+class THelicopter : public TLA {
+public:
+    THelicopter(float x, float y, float V, float xc, float yc, char type) :
+        TLA(x, y, V, xc, yc)
+    {
+        this->type_of = 2;
+    }
+
+    void move(float t, int a) override {
+        if (a == 0) this->f = false;
+        else this->f = true;
+
+        x = x - a * V * cos(fi) * dt;
+        y = y - a * V * sin(fi) * dt;
+    }
+};
+
+// Класс аэропорта
+class TAirport : public TAObject {
+public:
+    float l;                // Длина ВПП
+    TLA** LA;               // Массив указателей на ЛА
+
+    TAirport(float x, float y, float l) : TAObject(x, y), l(l)
+    {
+        this->f = false;
+        srand(static_cast<unsigned>(time(nullptr)));
+
+        LA = new TLA * [K];
+        for (int i = 0; i < K; i++) {
+            if (rand() % 2 == 0) {
+                LA[i] = new THelicopter(
+                    static_cast<float>(rand() % 10001),
+                    static_cast<float>(rand() % 10001),
+                    100 + static_cast<float>(rand() % 100),
+                    this->x, this->y, 'h');
+            }
+            else {
+                LA[i] = new TAircraft(
+                    static_cast<float>(rand() % 10001),
+                    static_cast<float>(rand() % 10001),
+                    200 + static_cast<float>(rand() % 101),
+                    this->x, this->y, 'a');
+            }
+        }
+    }
+
+    ~TAirport() {
+        for (int i = 0; i < K; i++) {
+            delete LA[i];
+        }
+        delete[] LA;
+    }
+
+    void Do(float t0, float tk) {
+        ofstream data("log.txt");        // Время посадок
+        ofstream coords("Goida.txt");  // Координаты в ожидании
+
+
+        float X = this->x + 1.1f * this->l;
+        int a = 0;
+
+        for (float t = t0; t <= tk; t += dt) {
+            for (int i = 0; i < K; i++) {
+                if (LA[i]->landing) continue;
+
+                // --- Вывод координат ЛА, пока он не начал посадку ---
+                coords << LA[i]->type_of << ' ' << i + 1 << ' ' << LA[i]->x << ' ' << LA[i]->y << ' ' << t << endl;
+                //coords_x << LA[i]->type_of << ' ' << LA[i]->x<<' '<<i + 1<<endl;
+                //coords_y << LA[i]->type_of << ' ' << LA[i]->y << ' ' << i + 1 << endl;
+if (LA[i]->type_of == 2) {
+                    if (!(this->f && !LA[i]->f)) {
+                        a = 1;
+                        this->f = true;
+                    }
+                    else {
+                        a = 0;
+                        this->f = false;
+                    }
+
+                    if (((pow(LA[i]->x - this->x, 2) + pow(LA[i]->y - this->y, 2)) < pow(this->l / 50, 2)) && LA[i]->f)
+                    {
+                        LA[i]->landing = true;
+                        data << "Aircraft number: " << i + 1 << ". Boarding time: " << t << endl;
+                    }
+                }
+
+                if (LA[i]->type_of == 1) {
+                    if (!(this->f && !LA[i]->f) && (LA[i]->x < X) && (abs(LA[i]->y - this->y) < this->l / 50)) {
+                        a = 1;
+                        this->f = true;
+                    }
+                    else {
+                        a = 0;
+                        this->f = false;
+                    }
+
+                    if ((abs(LA[i]->x) < (this->x + this->l)) && LA[i]->f) {
+                        LA[i]->landing = true;
+                        data << "Aircraft number: " << i + 1 << ". Boarding time: " << t << endl;
+                    }
+                }
+
+                LA[i]->move(t, a);
+            }
+        }
+        data.close();
+        coords.close();  // Не забываем закрыть файл
+    }
+};
+
+int main() {
+    TAirport port(0, 0, 500);
+    port.Do(0, 1000);
+    return 0;
+}
